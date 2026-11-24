@@ -14,6 +14,40 @@ back to the Accumulator and the new flags to the Flag Register. Full details,
 including the datapath, bit-slice and FSM diagrams, are in
 [docs/architecture.md](docs/architecture.md).
 
+## Pipelined ALU
+
+Use [alu_8085_pipeline](rtl/alu_8085_pipeline.v) for a stream of operations.
+On each rising edge with `in_valid` high, it samples `data_in_a`,
+`data_in_b`, `alu_op_in` and `use_acc` together. The result and flags appear on
+`acc_out`, `flags_out` and `flag_reg_out` just after the next rising edge
+with `out_valid` high. The receiver must be able to consume a result every
+clock. Drive `use_acc = 0` to use the external A byte. Drive `use_acc = 1`
+to use the accumulator from the most recent completed operation, including
+one completing on the same edge that accepts the request. Flags always
+carry over. A bubble holds both A and flags, and reset initializes A to zero.
+
+| Rising edge | Request sampled | Output just after the edge |
+| --- | --- | --- |
+| 1 | ADD 08h + 08h, `use_acc = 0` | Pipeline filling |
+| 2 | DAA, `use_acc = 1` | 10h, AC = 1 |
+| 3 | Idle (`in_valid = 0`) | 16h after decimal adjustment |
+| 4 | Next request | `out_valid = 0`, result and flags held |
+
+An active-high synchronous reset discards the pending operation and restores
+the Phase 1 reset values. The pipeline reuses the combinational 8-bit ALU.
+At the same clock frequency its peak throughput is one operation per cycle,
+compared with one every six cycles for the FSM.
+
+See the [FPGA timing and utilization report](report/fpga-timing.md) for the
+routed pipeline and commands to reproduce the measurement.
+
+Run the pipeline testbench from the project root with Icarus Verilog.
+
+```sh
+iverilog -I tb -s tb_alu_8085_pipeline -o pipeline.vvp rtl/*.v tb/tb_alu_8085_pipeline.v
+vvp pipeline.vvp
+```
+
 ## File Structure
 
 ```
